@@ -1,0 +1,196 @@
+{
+  "name": "DeepSeek Meta-Prompt Optimizer (Final Fix)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "deepseek/optimizer",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "bbf51a4e-98ce-41b9-a86c-3dc6edf0da55",
+      "name": "1. 接收 FastGPT (含历史)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        272
+      ],
+      "webhookId": "d707aca7-00f4-4c05-bb3d-0f890601b9e2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 【数据预处理】\n// 将 FastGPT 传来的历史记录数组，格式化为字符串\n\nconst body = $input.item.json.body || {};\nconst historyArray = body.history || [];\nconst currentMsg = body.message || \"\";\n\n// 只取最近 6 条记录，避免 Token 爆炸\nconst recentHistory = historyArray.slice(-6);\n\n// 格式化为对话脚本\nlet historyText = recentHistory.map(h => `${h.role}: ${h.content}`).join(\"\\n\");\n\nreturn {\n  current_msg: currentMsg,\n  history_context: historyText || \"(无历史记录，这是第一句)\"\n};"
+      },
+      "id": "227ad0ff-077c-456b-aa17-540ec4d98338",
+      "name": "2. 格式化上下文",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1424,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer sk-f083b9c20d1145a58e435da788f886e4"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: \"deepseek-chat\",\n  messages: [\n    {\n      role: \"system\",\n      content: \"你是一个顶级的【提示词优化专家】(Meta-Prompt Engineer)。\\n你的任务是根据用户的【聊天历史】和【当前问题】，为另一个AI生成最佳的配置。\\n\\n请分析用户的意图、情绪和隐含需求，然后输出一个 JSON：\\n1. generated_system_prompt: 为执行者AI编写的人设和指令。例如：如果用户在抱怨，就生成一个安抚型人设；如果用户在写代码，就生成一个资深工程师人设。\\n2. suggested_temperature: 建议的温度值 (0.0 - 1.5)。严谨任务用低温，创意任务用高温。\\n\\n【必须输出纯 JSON，不要包含 Markdown 标记】\"\n    },\n    {\n      role: \"user\",\n      content: \"### 聊天历史:\\n\" + $json.history_context + \"\\n\\n### 当前问题:\\n\" + $json.current_msg\n    }\n  ],\n  temperature: 0.7,\n  response_format: { type: \"json_object\" }\n}) }}",
+        "options": {}
+      },
+      "id": "34bf3bcc-a1b8-479a-b9cf-e4638ad8c2dc",
+      "name": "3. 军师AI (生成配置)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1632,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 【解析配置】\n// 提取军师AI生成的 Prompt 和 Temperature\ntry {\n  const aiContent = $input.item.json.choices[0].message.content;\n  const parsed = JSON.parse(aiContent);\n  \n  return {\n    // 这里的 Prompt 是 AI 刚刚为你生成的！\n    final_prompt: parsed.generated_system_prompt,\n    // 这里的 Temperature 也是 AI 决定的！\n    final_temp: parsed.suggested_temperature || 0.7,\n    user_msg: $('2. 格式化上下文').item.json.current_msg\n  };\n} catch (e) {\n  // 兜底策略\n  return {\n    final_prompt: \"你是一个智能助手。\",\n    final_temp: 0.5,\n    user_msg: $('2. 格式化上下文').item.json.current_msg\n  };\n}"
+      },
+      "id": "30b147e5-3008-4787-8318-3c4c4fff6eaf",
+      "name": "4. 提取优化配置",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1856,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer sk-f083b9c20d1145a58e435da788f886e4"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: \"deepseek-chat\",\n  messages: [\n    {\n      role: \"system\",\n      content: $json.final_prompt\n    },\n    {\n      role: \"user\",\n      content: $json.user_msg\n    }\n  ],\n  // 这里的温度是动态的！\n  temperature: $json.final_temp\n}) }}",
+        "options": {}
+      },
+      "id": "37a3d105-e6fe-4ca5-91e0-caa4da962775",
+      "name": "5. 执行者AI (最终回复)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2080,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ \n// 【终极修复】使用 JSON.stringify 自动处理转义\nJSON.stringify({\n  answer: $json.choices[0].message.content,\n  meta_info: {\n     optimized_prompt: $('4. 提取优化配置').item.json.final_prompt,\n     optimized_temp: $('4. 提取优化配置').item.json.final_temp\n  }\n})\n}}",
+        "options": {}
+      },
+      "id": "a66adb85-6c6f-4d08-abd3-4b4db5b8c9d2",
+      "name": "6. 返回 FastGPT",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2304,
+        272
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "1. 接收 FastGPT (含历史)": {
+      "main": [
+        [
+          {
+            "node": "2. 格式化上下文",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. 格式化上下文": {
+      "main": [
+        [
+          {
+            "node": "3. 军师AI (生成配置)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. 军师AI (生成配置)": {
+      "main": [
+        [
+          {
+            "node": "4. 提取优化配置",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. 提取优化配置": {
+      "main": [
+        [
+          {
+            "node": "5. 执行者AI (最终回复)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. 执行者AI (最终回复)": {
+      "main": [
+        [
+          {
+            "node": "6. 返回 FastGPT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "31dca86e-e46b-4d75-8db4-670184219d9f",
+  "meta": {
+    "instanceId": "f2d44ff5d72bd618a0e9a94dfa9f0702ee603fc6e05cd326e3fb38ed370d374e"
+  },
+  "id": "a-H8VRPqURF0c5vFD2ode",
+  "tags": []
+}
