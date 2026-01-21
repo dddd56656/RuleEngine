@@ -1,4 +1,4 @@
-<img width="8192" height="896" alt="Untitled diagram-2026-01-20-221231" src="https://github.com/user-attachments/assets/267d98a6-960e-44e9-acaa-167d5e77c868" />### 1. 全局时序图 (Sequence Diagram)
+### 1. 全局时序图 (Sequence Diagram)
 
 <img width="6350" height="7320" alt="Untitled diagram-2026-01-20-234344" src="https://github.com/user-attachments/assets/8ab0a212-3778-4b9e-931b-50460669ddbf" />
 
